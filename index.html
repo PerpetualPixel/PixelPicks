@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="description" content="The day's Pixel's Picks — 3 to 10 tracked bets a day, one board, no noise.">
+  <title>PixelPicks</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icon.svg" alt="" width="28" height="28">
+      <h1>PixelPicks</h1>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" id="tabToday" role="tab" aria-selected="true" aria-controls="panelToday">Today</button>
+      <button class="tab" id="tabRecord" role="tab" aria-selected="false" aria-controls="panelRecord">Record</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="panelToday" role="tabpanel" aria-labelledby="tabToday">
+      <div id="todayStatus" class="status-line" hidden></div>
+      <div id="todayError" class="error-box" hidden></div>
+      <div id="todayLoading" class="loading">Loading today’s board…</div>
+      <div id="potdSlot"></div>
+      <div id="picksSlot"></div>
+    </section>
+
+    <section id="panelRecord" role="tabpanel" aria-labelledby="tabRecord" hidden>
+      <div class="record-controls">
+        <div class="seg" id="windowSeg" role="group" aria-label="Time window">
+          <button data-days="7">7d</button>
+          <button data-days="30" class="is-active">30d</button>
+          <button data-days="90">90d</button>
+        </div>
+        <div class="seg" id="boardSeg" role="group" aria-label="Board">
+          <button data-board="all" class="is-active">All</button>
+          <button data-board="picks">Pixel’s Picks</button>
+          <button data-board="potd">Play of the Day</button>
+        </div>
+      </div>
+      <div id="recordError" class="error-box" hidden></div>
+      <div id="recordLoading" class="loading">Loading tracked record…</div>
+      <div id="recordSummary"></div>
+      <div id="recordBySport"></div>
+      <div id="recordDays"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Data: the PerpetualCode worker behind <a href="https://perpetualpicks.com" rel="noopener">perpetualpicks.com</a> — read-only, no odds credits spent here. Boards post ~2am&nbsp;ET and are graded hourly. Lines move; always confirm the price at the book. 21+, bet responsibly.</p>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
