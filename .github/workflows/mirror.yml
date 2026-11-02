@@ -1,0 +1,143 @@
+# Mirror perpetualpicks.com here, at https://perpetualpixel.github.io/PixelPicks/
+#
+# The site is PerpetualCode's docs/ folder on main, served by GitHub Pages
+# behind the custom domain. This job copies that folder as-is and publishes
+# it from this repo's Pages, so the same app is reachable at the github.io
+# URL too. Nothing is built, rewritten or re-fetched: the pages are the same
+# bytes, pointed at the same Cloudflare worker (docs/config.js's WORKER_URL).
+#
+# No extra API spend. The worker's odds cache is keyed by sport and market,
+# not by the page's origin, and the boards are drawn by the worker's own
+# cron once a day; a browser on this mirror reads the same cached copy a
+# browser on perpetualpicks.com reads. This repo carries none of
+# PerpetualCode's scheduled jobs (ESPN bundle, UFC card, tracking export),
+# so nothing here calls the worker, ESPN or The Odds API at all — this
+# workflow only talks to GitHub.
+#
+# Left out of the copy: CNAME (it would claim perpetualpicks.com for this
+# repo and break both sites), sitemap.xml, and robots.txt is replaced with
+# one that keeps the mirror out of search results, so the custom domain
+# stays the only copy search engines index.
+#
+# When it runs: every half hour on a schedule (skipped when neither
+# PerpetualCode's main nor this repo has moved since the last deploy), on a
+# push to this repo's default branch, by hand, and on a `mirror`
+# repository_dispatch — PerpetualCode's mirror-dispatch.yml sends one on
+# every docs/ change to main when its MIRROR_DISPATCH_TOKEN secret is set,
+# which cuts the lag from up to half an hour to about a minute.
+#
+# One-time setup: this repo's Settings → Pages → Build and deployment →
+# Source must be "GitHub Actions". The first run tries to switch it;
+# if the deploy step reports Pages is not configured for Actions, flip it
+# there and re-run.
+name: Mirror perpetualpicks.com
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [mirror]
+  push:
+    branches: ['**']
+    paths:
+      - board/**
+      - .github/workflows/mirror.yml
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPO: PerpetualPixel/PerpetualCode
+  SOURCE_BRANCH: main
+  MIRROR_URL: https://perpetualpixel.github.io/PixelPicks
+
+jobs:
+  mirror:
+    # Pushes only deploy from the default branch; a feature branch's push
+    # must not overwrite the live mirror.
+    if: github.event_name != 'push' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Find the source commit and whether the live mirror already has it
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$SOURCE_REPO/commits/$SOURCE_BRANCH" --jq .sha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          live=$(curl -fsS --max-time 20 "$MIRROR_URL/mirror.json" 2>/dev/null || echo '{}')
+          live_src=$(echo "$live" | jq -r '.sourceSha // ""')
+          live_self=$(echo "$live" | jq -r '.mirrorSha // ""')
+          echo "source $SOURCE_REPO@$SOURCE_BRANCH is $sha; live mirror has source=${live_src:-none} self=${live_self:-none}"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$live_src" = "$sha" ] && [ "$live_self" = "${{ github.sha }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "nothing changed since the last deploy — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the site (PerpetualCode docs/)
+        if: steps.source.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ steps.source.outputs.sha }}
+          path: source
+          sparse-checkout: docs
+          fetch-depth: 1
+
+      - name: Check out this repo (the board)
+        if: steps.source.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          path: self
+          fetch-depth: 1
+
+      - name: Stage the mirror
+        if: steps.source.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf site && mkdir site
+          cp -R source/docs/. site/
+          rm -f site/CNAME site/sitemap.xml
+          # Not for search engines: perpetualpicks.com is the canonical copy.
+          printf 'User-agent: *\nDisallow: /\n' > site/robots.txt
+          touch site/.nojekyll
+          # The standalone board, under /board/.
+          mkdir -p site/board && cp -R self/board/. site/board/
+          jq -n --arg src "$SOURCE_REPO" --arg branch "$SOURCE_BRANCH" --arg sha "${{ steps.source.outputs.sha }}" \
+                --arg self "${{ github.sha }}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run "${{ github.run_id }}" \
+                '{source: $src, sourceBranch: $branch, sourceSha: $sha, mirrorSha: $self, mirroredAt: $at, run: $run}' \
+                > site/mirror.json
+          cat site/mirror.json
+          echo "files: $(find site -type f | wc -l), size: $(du -sh site | cut -f1)"
+          test -f site/index.html && test -f site/app.html && test -f site/board/index.html && test ! -e site/CNAME
+
+      - name: Configure Pages
+        if: steps.source.outputs.skip != 'true'
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload
+        if: steps.source.outputs.skip != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy
+        if: steps.source.outputs.skip != 'true'
+        id: deploy
+        uses: actions/deploy-pages@v4
